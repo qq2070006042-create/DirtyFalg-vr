@@ -11,6 +11,12 @@
 
 ## Unreleased
 
+- Ported the compatible DFRoot 4.7 kernel fixes: AVC fallback when SELinux
+  remains enforcing, an explicit `module_exit` entry for CFI compatibility,
+  and an init exec context for the bootstrap. Kept the VR fail-closed path and
+  the fork's PAC/BTI-aware patcher intact.
+- Applied the DFRoot 4.7 LKM compiler flags (`-Qn`, `-fno-addrsig`).
+
 - Watching [chisewaguri/DFRoot](https://github.com/chisewaguri/DFRoot/tree/upstream-standalone): it drops
   the separate bootstrap binary and the staged copy of ksud, and has the kernel module exec the selected
   manager's own `libksud.so`, passing the package name and both switches as insmod parameters. That is

